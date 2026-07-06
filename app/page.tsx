@@ -11,6 +11,10 @@ export default function Home() {
           <code>GET /api/tick</code> — pushes the current frame to the board (requires{" "}
           <code>X-Tick-Secret</code> header)
         </li>
+        <li>
+          <code>GET /api/control</code> — change book/random/pause (requires{" "}
+          <code>?dongle=...</code>)
+        </li>
       </ul>
     </main>
   );

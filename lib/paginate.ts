@@ -1,9 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
 import { BOARD_COLS, BOARD_ROWS } from "./vestaboardCodes";
-import { awakeMinutesElapsed, getQuietHoursConfig } from "./quietHours";
 
-const BOOK_PATH = path.join(process.cwd(), "content", "book.txt");
+// A line "ends cleanly" if it ends in one of these — used to prefer cutting a frame here
+// over an arbitrary 6-line hard cut, so a 5-minute refresh doesn't land mid-clause.
+const BOUNDARY_PUNCTUATION = /[.,;]$/;
 
 function normalizeText(raw: string): string {
   return raw
@@ -41,38 +40,33 @@ function centerLine(line: string, width: number): string {
   return " ".repeat(left) + line + " ".repeat(right);
 }
 
-function buildFrames(text: string): string[][] {
-  const lines = wrapWords(text, BOARD_COLS);
+// Groups wrapped lines into frames of up to BOARD_ROWS lines each, preferring to cut at the
+// last line (within the window) that ends in qualifying punctuation. Falls back to a hard
+// BOARD_ROWS-line cut when no punctuation boundary is found in the window at all.
+function groupIntoFrames(lines: string[]): string[][] {
   const frames: string[][] = [];
+  let cursor = 0;
 
-  for (let i = 0; i < lines.length; i += BOARD_ROWS) {
-    const chunk = lines.slice(i, i + BOARD_ROWS);
+  while (cursor < lines.length) {
+    const window = lines.slice(cursor, cursor + BOARD_ROWS);
+
+    let cut = window.length;
+    for (let j = window.length; j >= 1; j--) {
+      if (BOUNDARY_PUNCTUATION.test(window[j - 1])) {
+        cut = j;
+        break;
+      }
+    }
+
+    const chunk = window.slice(0, cut);
     while (chunk.length < BOARD_ROWS) chunk.push("");
     frames.push(chunk.map((line) => centerLine(line, BOARD_COLS)));
+    cursor += cut;
   }
+
   return frames;
 }
 
-let cachedFrames: string[][] | null = null;
-
-export function getFrames(): string[][] {
-  if (!cachedFrames) {
-    const raw = fs.readFileSync(BOOK_PATH, "utf-8");
-    cachedFrames = buildFrames(normalizeText(raw));
-  }
-  return cachedFrames;
-}
-
-export function getCurrentFrameIndex(frameCount: number): number {
-  const startTime = new Date(process.env.START_TIME || process.env.BUILD_TIME || 0);
-  const intervalMinutes = Number(process.env.INTERVAL_MINUTES ?? 5);
-  const now = new Date();
-
-  const quietCfg = getQuietHoursConfig();
-  const elapsedMinutes = quietCfg
-    ? awakeMinutesElapsed(startTime, now, quietCfg)
-    : Math.floor((now.getTime() - startTime.getTime()) / 60_000);
-
-  const elapsedFrames = Math.floor(elapsedMinutes / intervalMinutes);
-  return ((elapsedFrames % frameCount) + frameCount) % frameCount;
+export function buildFrames(raw: string): string[][] {
+  return groupIntoFrames(wrapWords(normalizeText(raw), BOARD_COLS));
 }

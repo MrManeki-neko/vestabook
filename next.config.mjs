@@ -5,7 +5,7 @@ const nextConfig = {
   },
   experimental: {
     outputFileTracingIncludes: {
-      "/api/**": ["./content/**"],
+      "/api/**": ["./content/**", "./config/**"],
     },
   },
 };
