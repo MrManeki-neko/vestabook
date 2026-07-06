@@ -1,5 +1,8 @@
 {
-  "mode": { "type": "cycle" },
+  "mode": {
+    "type": "single",
+    "book": "paradise_lost"
+  },
   "pausedAt": null,
   "accumulatedPauseMinutes": 0
 }
