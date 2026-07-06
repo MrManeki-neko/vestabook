@@ -3,8 +3,10 @@ const nextConfig = {
   env: {
     BUILD_TIME: new Date().toISOString(),
   },
-  outputFileTracingIncludes: {
-    "/api/**": ["./content/**"],
+  experimental: {
+    outputFileTracingIncludes: {
+      "/api/**": ["./content/**"],
+    },
   },
 };
 
