@@ -4,7 +4,7 @@ Runs a whole book on a physical [Vestaboard](https://www.vestaboard.com/), advan
 next chunk of text on a timer. Deployed on Vercel, no database, no admin UI, no scheduler of
 its own — a third-party cron service (cron-job.org) is what drives it forward.
 
-Live: https://vestabook-6oz4.vercel.app
+Live: https://vestabook.vercel.app
 
 ## Design: no database, no stored position
 
@@ -54,8 +54,8 @@ that's done without a database.
 ## Book library & `/api/control`
 
 Every `content/*.txt` file is a book, identified by its filename minus `.txt` (e.g.
-`content/moby_dick.txt` → id `moby_dick`). Add a book by committing a new `.txt` file — no
-code changes needed.
+`content/moby_dick.txt` → id `moby_dick`). Currently shipped: `paradise_lost`, `moby_dick`,
+`inferno`. Add a book by committing a new `.txt` file — no code changes needed.
 
 With no book forced, the app auto-cycles through every book in the library in order, looping
 back to the first once the last one finishes. `GET /api/control` changes that:
@@ -159,6 +159,12 @@ paused. `GET /api/tick` returns `{"ok": true, "skipped": "paused"}` while paused
 - **`502` with `github_read_failed` or `github_write_failed` from `/api/control`**:
   `GITHUB_TOKEN` is missing/expired/wrong scope, or `GITHUB_REPO` doesn't match
   `owner/repo`. The token needs Contents read/write on this repo.
+- **`502` with `github_write_failed` and a `409` status specifically**: the GitHub Contents
+  API rejected the write because `config/state.json`'s sha moved between the read and the
+  write (another control call landed first, or a cached read served a stale sha). The route
+  already retries this automatically up to 3 times with a fresh `no-store` read each time
+  (`app/api/control/route.ts`) — if you still see a 409 after that, something is writing to
+  `config/state.json` very frequently, or GitHub's API is having a bad moment; just retry.
 - **`/api/control` returns `ok: true` but the board doesn't reflect it yet**: expected for
   the first 15-30 seconds — it just committed to `main` and Vercel is redeploying. Check
   `/api/preview`'s `X-Book-Id` header once the new deployment is ready.
