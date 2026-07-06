@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BOARD_COLS, BOARD_ROWS } from "./vestaboardCodes";
+import { awakeMinutesElapsed, getQuietHoursConfig } from "./quietHours";
 
 const BOOK_PATH = path.join(process.cwd(), "content", "book.txt");
 
@@ -63,8 +64,15 @@ export function getFrames(): string[][] {
 }
 
 export function getCurrentFrameIndex(frameCount: number): number {
-  const startTime = new Date(process.env.START_TIME || process.env.BUILD_TIME || 0).getTime();
+  const startTime = new Date(process.env.START_TIME || process.env.BUILD_TIME || 0);
   const intervalMinutes = Number(process.env.INTERVAL_MINUTES ?? 5);
-  const elapsedFrames = Math.floor((Date.now() - startTime) / (intervalMinutes * 60_000));
+  const now = new Date();
+
+  const quietCfg = getQuietHoursConfig();
+  const elapsedMinutes = quietCfg
+    ? awakeMinutesElapsed(startTime, now, quietCfg)
+    : Math.floor((now.getTime() - startTime.getTime()) / 60_000);
+
+  const elapsedFrames = Math.floor(elapsedMinutes / intervalMinutes);
   return ((elapsedFrames % frameCount) + frameCount) % frameCount;
 }
