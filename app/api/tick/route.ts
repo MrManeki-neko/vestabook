@@ -3,13 +3,14 @@ import { getCurrentFrame } from "@/lib/sequencer";
 import { encodeLine } from "@/lib/vestaboardCodes";
 import { getQuietHoursConfig, isQuietNow } from "@/lib/quietHours";
 import { isPausedNow } from "@/lib/state";
+import { secretMatches } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const secret = req.headers.get("x-tick-secret");
-  if (!secret || secret !== process.env.TICK_SECRET) {
+  if (!secretMatches(secret, process.env.TICK_SECRET)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -25,14 +26,23 @@ export async function GET(req: NextRequest) {
   const { bookId, frameIndex, frame } = getCurrentFrame();
   const characters = frame.map(encodeLine);
 
-  const vestaboardRes = await fetch("https://cloud.vestaboard.com/", {
-    method: "POST",
-    headers: {
-      "X-Vestaboard-Token": process.env.VESTABOARD_TOKEN ?? "",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ characters }),
-  });
+  let vestaboardRes: Response;
+  try {
+    vestaboardRes = await fetch("https://cloud.vestaboard.com/", {
+      method: "POST",
+      headers: {
+        "X-Vestaboard-Token": process.env.VESTABOARD_TOKEN ?? "",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ characters }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: "vestaboard_unreachable", detail: String(err) },
+      { status: 504 }
+    );
+  }
 
   if (!vestaboardRes.ok) {
     const body = await vestaboardRes.text();

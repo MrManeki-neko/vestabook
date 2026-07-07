@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listBookIds } from "@/lib/library";
-import type { ControlState } from "@/lib/state";
+import { normalizeState, type ControlState } from "@/lib/state";
+import { pauseMinutesBetween } from "@/lib/quietHours";
+import { secretMatches } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +26,7 @@ async function githubContents(method: "GET" | "PUT", body?: Record<string, unkno
       "Content-Type": "application/json",
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(10_000),
   });
 }
 
@@ -44,8 +47,7 @@ function applyFlags(
   if (flags.pause === "true" && !next.pausedAt) {
     next.pausedAt = new Date().toISOString();
   } else if (flags.pause === "false" && next.pausedAt) {
-    const elapsedMinutes = (Date.now() - new Date(next.pausedAt).getTime()) / 60_000;
-    next.accumulatedPauseMinutes += elapsedMinutes;
+    next.accumulatedPauseMinutes += pauseMinutesBetween(new Date(next.pausedAt), new Date());
     next.pausedAt = null;
   }
 
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
   const dongle = searchParams.get("dongle");
-  if (!dongle || dongle !== process.env.CONTROL_DONGLE_SECRET) {
+  if (!secretMatches(dongle, process.env.CONTROL_DONGLE_SECRET)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -70,6 +72,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "no_flags_provided" }, { status: 400 });
   }
 
+  for (const name of ["random", "pause"] as const) {
+    const value = flags[name];
+    if (value !== null && value !== "true" && value !== "false") {
+      return NextResponse.json(
+        { error: "invalid_flag_value", flag: name, allowed: ["true", "false"] },
+        { status: 400 }
+      );
+    }
+  }
+
   const validIds = listBookIds();
   if (flags.book && !validIds.includes(flags.book)) {
     return NextResponse.json({ error: "unknown_book", validIds }, { status: 400 });
@@ -81,7 +93,15 @@ export async function GET(req: NextRequest) {
   let lastFailure: NextResponse | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const getRes = await githubContents("GET");
+    let getRes: Response;
+    try {
+      getRes = await githubContents("GET");
+    } catch (err) {
+      return NextResponse.json(
+        { error: "github_unreachable", detail: String(err) },
+        { status: 504 }
+      );
+    }
     if (!getRes.ok) {
       const body = await getRes.text();
       return NextResponse.json(
@@ -90,20 +110,33 @@ export async function GET(req: NextRequest) {
       );
     }
     const current = (await getRes.json()) as GithubContentResponse;
-    const currentState = JSON.parse(
-      Buffer.from(current.content, "base64").toString("utf-8")
-    ) as ControlState;
+    const currentState = normalizeState(
+      JSON.parse(Buffer.from(current.content, "base64").toString("utf-8"))
+    );
 
     const nextState = applyFlags(currentState, flags);
 
-    const putRes = await githubContents("PUT", {
-      message: "vestabook: update control state via /api/control",
-      content: Buffer.from(JSON.stringify(nextState, null, 2) + "\n", "utf-8").toString(
-        "base64"
-      ),
-      sha: current.sha,
-      branch: "main",
-    });
+    // Committing an unchanged state would trigger a pointless Vercel redeploy.
+    if (JSON.stringify(nextState) === JSON.stringify(currentState)) {
+      return NextResponse.json({ ok: true, unchanged: true, newState: nextState });
+    }
+
+    let putRes: Response;
+    try {
+      putRes = await githubContents("PUT", {
+        message: "vestabook: update control state via /api/control",
+        content: Buffer.from(JSON.stringify(nextState, null, 2) + "\n", "utf-8").toString(
+          "base64"
+        ),
+        sha: current.sha,
+        branch: "main",
+      });
+    } catch (err) {
+      return NextResponse.json(
+        { error: "github_unreachable", detail: String(err) },
+        { status: 504 }
+      );
+    }
 
     if (putRes.ok) {
       return NextResponse.json({
