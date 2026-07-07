@@ -99,3 +99,13 @@ export function awakeMinutesElapsed(start: Date, now: Date, cfg: QuietHoursConfi
   }
   return awake;
 }
+
+// Pause durations must be measured in the same units the main clock uses. When quiet hours
+// are configured that is awake-minutes (quiet minutes are already excluded from elapsed
+// time, so counting them inside a pause too would subtract them twice and rewind the
+// board); otherwise plain wall-clock minutes.
+export function pauseMinutesBetween(start: Date, now: Date): number {
+  const cfg = getQuietHoursConfig();
+  if (cfg) return awakeMinutesElapsed(start, now, cfg);
+  return Math.max(0, (now.getTime() - start.getTime()) / 60_000);
+}
