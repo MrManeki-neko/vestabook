@@ -5,8 +5,16 @@ import { getPauseAdjustmentMinutes } from "./state";
 // INTERVAL_MINUTES-sized ticks have elapsed since START_TIME, excluding quiet-hours minutes
 // and manually-paused minutes. This is the only place "now" enters the pagination logic.
 export function getGlobalTick(): number {
-  const startTime = new Date(process.env.START_TIME || process.env.BUILD_TIME || 0);
-  const intervalMinutes = Number(process.env.INTERVAL_MINUTES ?? 5);
+  let startTime = new Date(process.env.START_TIME || process.env.BUILD_TIME || 0);
+  if (Number.isNaN(startTime.getTime())) {
+    // START_TIME was set but unparseable — fall back rather than poisoning the clock with NaN
+    startTime = new Date(process.env.BUILD_TIME || 0);
+  }
+  if (Number.isNaN(startTime.getTime())) startTime = new Date(0);
+
+  const parsedInterval = Number(process.env.INTERVAL_MINUTES);
+  const intervalMinutes =
+    Number.isFinite(parsedInterval) && parsedInterval > 0 ? parsedInterval : 5;
   const now = new Date();
 
   const quietCfg = getQuietHoursConfig();
