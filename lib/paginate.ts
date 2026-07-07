@@ -59,8 +59,10 @@ function groupIntoFrames(lines: string[]): string[][] {
     }
 
     const chunk = window.slice(0, cut);
-    while (chunk.length < BOARD_ROWS) chunk.push("");
-    frames.push(chunk.map((line) => centerLine(line, BOARD_COLS)));
+    const topPad = Math.floor((BOARD_ROWS - chunk.length) / 2);
+    const bottomPad = BOARD_ROWS - chunk.length - topPad;
+    const padded = [...Array(topPad).fill(""), ...chunk, ...Array(bottomPad).fill("")];
+    frames.push(padded.map((line) => centerLine(line, BOARD_COLS)));
     cursor += cut;
   }
 

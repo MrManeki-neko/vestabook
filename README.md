@@ -37,7 +37,9 @@ that's done without a database.
    - Lines are grouped into frames of up to 6 lines (Vestaboard's row count), but the cut
      point prefers the last line in the window that ends in `.`, `,`, or `;` — so a 5-minute
      refresh lands on a clause boundary instead of mid-sentence. Only falls back to a hard
-     6-line cut when no such punctuation appears anywhere in the window.
+     6-line cut when no such punctuation appears anywhere in the window. Frames with fewer
+     than 6 lines are vertically centered: blank padding lines are split between the top and
+     bottom of the frame rather than grouped only at the bottom.
 2. **`GET /api/tick`** — the only endpoint that writes to the board:
    - Requires header `X-Tick-Secret` matching the `TICK_SECRET` env var; returns `401` if
      missing/wrong.
