@@ -10,6 +10,15 @@ function normalizeText(raw: string): string {
     .replace(/[‘’]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/[–—]/g, "-")
+    .replace(/\[\d+\]/g, "")          // Gutenberg footnote markers like [1] — strip entirely
+    .replace(/[_*\[\]]/g, "")         // emphasis markup (_word_, *word*) and stray brackets
+    .replace(/Æ/g, "AE")
+    .replace(/æ/g, "ae")
+    .replace(/Œ/g, "OE")
+    .replace(/œ/g, "oe")
+    .replace(/£/g, "")
+    .normalize("NFD")                 // È → E + combining grave ...
+    .replace(/[̀-ͯ]/g, "")  // ... then drop the combining marks
     .replace(/\s+/g, " ")
     .trim()
     .toUpperCase();
@@ -26,8 +35,17 @@ function wrapWords(text: string, maxWidth: number): string[] {
       current = candidate;
       continue;
     }
-    if (current) lines.push(current);
-    current = word.length <= maxWidth ? word : word.slice(0, maxWidth);
+    if (current) {
+      lines.push(current);
+      current = "";
+    }
+    // A word longer than the board is split across lines rather than truncated.
+    let rest = word;
+    while (rest.length > maxWidth) {
+      lines.push(rest.slice(0, maxWidth));
+      rest = rest.slice(maxWidth);
+    }
+    current = rest;
   }
   if (current) lines.push(current);
   return lines;
