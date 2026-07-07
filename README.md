@@ -32,8 +32,11 @@ that's done without a database.
 1. **Pagination** (`lib/paginate.ts`, runs per book and is cached):
    - Each `content/<id>.txt` is read, smart quotes/dashes are normalized to ASCII, whitespace
      is collapsed, and the whole thing is uppercased (the physical board is uppercase-only).
-   - Text is word-wrapped to 22 characters per line (Vestaboard's column count), never
-     splitting a word.
+   - Gutenberg footnote markers (e.g., `[1]`, `[2]`), underscore/asterisk emphasis markup,
+     and accented capital letters (È, Æ, etc.) are stripped or transliterated to plain ASCII
+     so they don't render as blank tiles on the board.
+   - Text is word-wrapped to 22 characters per line (Vestaboard's column count). Words longer
+     than 22 characters are wrapped across multiple lines instead of being truncated.
    - Lines are grouped into frames of up to 6 lines (Vestaboard's row count), but the cut
      point prefers the last line in the window that ends in `.`, `,`, or `;` — so a 5-minute
      refresh lands on a clause boundary instead of mid-sentence. Only falls back to a hard
@@ -71,7 +74,9 @@ GET /api/control?pause=false&dongle=<CONTROL_DONGLE_SECRET>      # resume exactl
 ```
 
 Flags can be combined in one request (e.g. `?book=moby_dick&pause=true&dongle=...`); only the
-flags you pass are changed, everything else is left as-is.
+flags you pass are changed, everything else is left as-is. Invalid flag values (e.g. `?random=banana`)
+return a `400` error. Requests that don't change the state skip the GitHub commit, avoiding pointless
+redeploys.
 
 **Why this needs a git commit, not just a request:** `/api/tick` deliberately takes no query
 params — cron-job.org always hits the same bare URL, forever. So a choice made by visiting
@@ -111,6 +116,12 @@ Create a job:
 - **Schedule**: every `INTERVAL_MINUTES` minutes
 - **Headers**: `X-Tick-Secret: <TICK_SECRET>`
 
+## Testing
+
+Run `npm test` (vitest) to execute the test suite, which covers quiet-hours arithmetic,
+pagination (word wrapping, punctuation-based framing, markup stripping), and state/env var
+validation.
+
 ## Quiet hours / do-not-disturb
 
 Set `QUIET_HOURS_START` / `QUIET_HOURS_END` / `QUIET_HOURS_TZ` to match whatever do-not-disturb
@@ -147,8 +158,10 @@ paused. `GET /api/tick` returns `{"ok": true, "skipped": "paused"}` while paused
 - **`401` from `/api/tick`**: `X-Tick-Secret` header doesn't match `TICK_SECRET`. Check for
   trailing whitespace from copy-paste, and confirm you redeployed after setting/changing the
   env var (Vercel only applies env var changes on the next deploy).
-- **`502` from `/api/tick`**: Vestaboard rejected the POST — usually a bad or expired
-  `VESTABOARD_TOKEN`. The response body includes Vestaboard's error text.
+- **`502` or `504` from `/api/tick`**: Vestaboard API error. A `502` means Vestaboard rejected
+  the POST — usually a bad or expired `VESTABOARD_TOKEN`; the response body includes
+  Vestaboard's error text. A `504` means the request timed out (10-second limit); check
+  network connectivity or Vestaboard's API status.
 - **`200` from `/api/tick` but the board doesn't update**: if the body is
   `{"skipped": "quiet_hours"}`, that's expected — it's currently inside the configured quiet
   window. Otherwise, double check the cron job's URL actually points at the current
@@ -158,6 +171,8 @@ paused. `GET /api/tick` returns `{"ok": true, "skipped": "paused"}` while paused
   Framework Preset isn't set to Next.js. Settings → General → Build & Development Settings →
   Framework Preset → Next.js, then redeploy.
 - **`401` from `/api/control`**: `?dongle=` doesn't match `CONTROL_DONGLE_SECRET`.
+- **`400` from `/api/control`**: A flag was passed an invalid value (e.g., `?random=banana`).
+  Valid values: `book=<id>` (any book ID in `content/`), `random=true/false`, `pause=true/false`.
 - **`502` with `github_read_failed` or `github_write_failed` from `/api/control`**:
   `GITHUB_TOKEN` is missing/expired/wrong scope, or `GITHUB_REPO` doesn't match
   `owner/repo`. The token needs Contents read/write on this repo.
